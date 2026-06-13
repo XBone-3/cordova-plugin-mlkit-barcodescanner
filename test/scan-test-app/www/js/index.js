@@ -21,10 +21,38 @@
 // See https://cordova.apache.org/docs/en/latest/cordova/events/events.html#deviceready
 document.addEventListener('deviceready', onDeviceReady, false);
 
-function onSuccess(result) {
+// Tag used to filter this app's logs in `adb logcat chromium:I` /
+// chrome://inspect.
+const TAG = '[ScanTest]';
+let scanCount = 0;
+
+function log(text) {
   const node = document.createElement('div');
-  node.textContent = `${result.text} (${result.format}/${result.type})`;
+  node.textContent = text;
   document.getElementById('output').prepend(node);
+}
+
+// With the `multiple` option the callback receives an array of results;
+// otherwise it receives a single result. Normalise to an array so both work.
+function onSuccess(result) {
+  // Log exactly what the plugin handed back so we can see its shape.
+  console.log(TAG, 'onSuccess raw result:', JSON.stringify(result));
+
+  const results = Array.isArray(result) ? result : [result];
+  console.log(TAG, `onSuccess parsed ${results.length} barcode(s)`);
+
+  results.forEach((barcode, i) => {
+    console.log(
+      TAG,
+      `  [${i}] text=${barcode.text} format=${barcode.format} type=${barcode.type}`,
+    );
+    log(`${barcode.text} (${barcode.format}/${barcode.type})`);
+  });
+}
+
+function onError(error) {
+  console.log(TAG, 'onError:', JSON.stringify(error));
+  log(error.cancelled ? 'Scanner closed' : `Error: ${error.message}`);
 }
 
 function scan() {
@@ -37,10 +65,15 @@ function scan() {
     options[key] = value === 'true';
   }
 
-  cordova.plugins.mlkit.barcodeScanner.scan(options, onSuccess, console.error);
+  scanCount += 1;
+  console.log(TAG, `--- scan #${scanCount} ---`);
+  console.log(TAG, 'options:', JSON.stringify(options));
+  log(`Scanning... (#${scanCount})`);
+
+  cordova.plugins.mlkit.barcodeScanner.scan(options, onSuccess, onError);
 }
 
 function onDeviceReady() {
-  console.log('Running cordova-' + cordova.platformId + '@' + cordova.version);
+  console.log(TAG, 'Running cordova-' + cordova.platformId + '@' + cordova.version);
   document.getElementById('scan').onclick = scan;
 }
