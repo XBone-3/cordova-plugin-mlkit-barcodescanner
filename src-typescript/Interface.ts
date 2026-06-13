@@ -32,6 +32,17 @@ export interface IOptions {
    * false.
    */
   multiple?: boolean;
+  /**
+   * Draw a border around each barcode as it is detected in the camera
+   * preview, tracing the code's corner points. Default: false.
+   */
+  drawDetectionBorder?: boolean;
+  /**
+   * Require the user to confirm a detected barcode before it is returned. The
+   * preview freezes on the detected frame with a Confirm/Retry prompt. Ignored
+   * in continuous mode. Default: false.
+   */
+  confirmation?: boolean;
 }
 
 export interface IConfig {
@@ -42,6 +53,8 @@ export interface IConfig {
   rotateCamera: boolean;
   continuous: boolean;
   multiple: boolean;
+  drawDetectionBorder: boolean;
+  confirmation: boolean;
 }
 
 export interface IResult {

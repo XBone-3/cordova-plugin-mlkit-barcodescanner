@@ -14,4 +14,7 @@
   <string name="barcode_success">Barcode erfolgreich gelesen</string>
   <string name="barcode_failure">Kein Barcode erfasst</string>
   <string name="barcode_error">"Fehler beim Lesen von Barcode: %1$s"</string>
+  <string name="scan_confirm">Bestätigen</string>
+  <string name="scan_retry">Wiederholen</string>
+  <string name="scan_confirm_count">%1$d Barcodes erkannt</string>
 </resources>

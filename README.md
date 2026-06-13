@@ -117,6 +117,8 @@ const defaultOptions = {
   rotateCamera: false,
   continuous: false,
   multiple: false,
+  drawDetectionBorder: false,
+  confirmation: false,
 };
 ```
 
@@ -134,6 +136,20 @@ result).
 When `true`, every barcode visible in a frame is detected and the success
 callback receives an **array** of results instead of a single result. Can be
 combined with `continuous`. Default: `false`.
+
+#### `drawDetectionBorder`
+
+When `true`, a border is drawn around each barcode in the camera preview as it
+is detected, tracing the code's corner points (so it follows rotated and 2D
+codes). Default: `false`. (Android only.)
+
+#### `confirmation`
+
+When `true`, a detected barcode is not returned immediately. The preview
+freezes on the detected frame with the decoded value and **Confirm** / **Retry**
+buttons; the result is returned only when the user taps Confirm. Combine with
+`multiple` to confirm a whole frame of codes at once. Ignored in `continuous`
+mode. Default: `false`. (Android only.)
 
 ### Output/Return value
 

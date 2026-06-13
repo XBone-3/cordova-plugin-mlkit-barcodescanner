@@ -22,4 +22,6 @@ export const defaultOptions: Required<IOptions> = Object.freeze({
   rotateCamera: false,
   continuous: false,
   multiple: false,
+  drawDetectionBorder: false,
+  confirmation: false,
 });

@@ -10,7 +10,10 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.Path;
+import android.graphics.Point;
 import android.graphics.PorterDuff;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Bundle;
 
@@ -20,7 +23,10 @@ import android.view.ScaleGestureDetector;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
@@ -73,18 +79,41 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
 
   private boolean continuous = false;
   private boolean multiple = false;
+  private boolean drawDetectionBorder = false;
+  private boolean confirmation = false;
+  private boolean rotateCamera = false;
+
+  // Barcodes currently drawn on the overlay, so a surface change can redraw them.
+  private volatile List<Barcode> overlayBarcodes;
 
   // Raw values already streamed back in continuous mode, so each barcode is
   // reported only once per session.
   private final Set<String> emittedValues = new HashSet<>();
+
+  // Side length (px) of the square crop last handed to ML Kit, used to map
+  // barcode corner points back into overlay/view coordinates.
+  private volatile float cropSide = 0;
+
+  // Serialises overlay canvas access between the analyzer thread and the UI
+  // thread (surface callbacks, confirm/retry).
+  private final Object overlayLock = new Object();
+
+  // While a detected barcode is awaiting Confirm/Retry the analyzer stops
+  // processing frames and the preview is frozen.
+  private volatile boolean awaitingConfirmation = false;
+  private JSONArray pendingPayload;
+
+  private ImageView freezeFrame;
+  private View confirmPanel;
+  private TextView confirmText;
+  private Button confirmButton;
+  private Button retryButton;
 
   private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
   private ExecutorService executor = Executors.newSingleThreadExecutor();
   private PreviewView mCameraView;
   private SurfaceHolder holder;
   private SurfaceView surfaceView;
-  private Canvas canvas;
-  private Paint paint;
 
   private static final int RC_HANDLE_CAMERA_PERM = 2;
   private ImageButton _TorchButton;
@@ -111,10 +140,16 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
     DetectorSize = getIntent().getDoubleExtra("DetectorSize", .5);
     continuous = getIntent().getBooleanExtra("Continuous", false);
     multiple = getIntent().getBooleanExtra("Multiple", false);
+    drawDetectionBorder = getIntent().getBooleanExtra("DrawDetectionBorder", false);
+    rotateCamera = getIntent().getBooleanExtra("RotateCamera", false);
+    // Confirmation is meaningless while continuously streaming results.
+    confirmation = getIntent().getBooleanExtra("Confirmation", false) && !continuous;
 
     if (DetectorSize <= 0 || DetectorSize >= 1) { // setting boundary detectorSize must be between 0 to 1.
       DetectorSize = 0.5;
     }
+
+    setupConfirmationUi();
 
     int rc = ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA);
 
@@ -217,7 +252,7 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
 
     if (grantResults.length != 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
       startCamera();
-      DrawFocusRect(Color.parseColor("#FFFFFF"));
+      redrawOverlay(overlayBarcodes);
       return;
     }
 
@@ -240,7 +275,7 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
 
   @Override
   public void surfaceChanged(SurfaceHolder surfaceHolder, int i, int i1, int i2) {
-    DrawFocusRect(Color.parseColor("#FFFFFF"));
+    redrawOverlay(overlayBarcodes);
   }
 
   @Override
@@ -272,7 +307,6 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
     mCameraView = findViewById(getResources().getIdentifier("previewView", "id", getPackageName()));
     mCameraView.setPreferredImplementationMode(PreviewView.ImplementationMode.TEXTURE_VIEW);
 
-    Boolean rotateCamera = getIntent().getBooleanExtra("RotateCamera", false);
     if (rotateCamera) {
       mCameraView.setScaleX(-1F);
       mCameraView.setScaleY(-1F);
@@ -334,6 +368,13 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
           return;
         }
 
+        // While the user is confirming a detection the preview is frozen, so
+        // there is nothing to analyze.
+        if (awaitingConfirmation) {
+          image.close();
+          return;
+        }
+
         Bitmap bmp = BitmapUtils.getBitmap(image);
 
         int height = bmp.getHeight();
@@ -358,17 +399,24 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
         boxWidth = right - left;
 
         Bitmap bitmap = Bitmap.createBitmap(bmp, left, top, boxWidth, boxHeight);
-        scanner.process(InputImage.fromBitmap(bitmap, image.getImageInfo().getRotationDegrees()))
+        // BitmapUtils.getBitmap() has already rotated the frame upright, so the
+        // crop is upright too; pass rotation 0 so ML Kit reports corner points
+        // directly in crop-pixel space (boxWidth == boxHeight).
+        cropSide = boxWidth;
+        scanner.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener(new OnSuccessListener<List<Barcode>>() {
               @Override
               public void onSuccess(List<Barcode> barCodes) {
+                // Another frame may have entered confirmation while this one
+                // was in flight; drop it.
+                if (awaitingConfirmation) {
+                  return;
+                }
 
-                // # Code to test image viewfinder
-                /*
-                 * ImageView imageView = (ImageView)
-                 * findViewById(getResources().getIdentifier("imageView", "id",
-                 * getPackageName())); imageView.setImageBitmap(bitmap);
-                 */
+                // Keep the live detection border in sync with what is on screen.
+                if (drawDetectionBorder) {
+                  redrawOverlay(barCodes);
+                }
 
                 if (barCodes.size() == 0) {
                   return;
@@ -436,12 +484,19 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
 
     if (continuous) {
       MLKitBarcodeScanner.sendContinuousResult(payload);
+    } else if (confirmation) {
+      enterConfirmation(payload, barCodes);
     } else {
-      Intent data = new Intent();
-      data.putExtra(BarcodePayload, payload.toString());
-      setResult(CommonStatusCodes.SUCCESS, data);
-      finish();
+      finishWithResult(payload);
     }
+  }
+
+  /** Returns the payload to the plugin and closes the scanner. */
+  private void finishWithResult(JSONArray payload) {
+    Intent data = new Intent();
+    data.putExtra(BarcodePayload, payload.toString());
+    setResult(CommonStatusCodes.SUCCESS, data);
+    finish();
   }
 
   /**
@@ -474,48 +529,194 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
     }
   }
 
+  // --------------------------------------------------------------------------
+  // | Overlay drawing
+  // --------------------------------------------------------------------------
+
   /**
-   * For drawing the rectangular box
+   * Redraws the overlay: the focus rectangle plus a corner-point border around
+   * each supplied barcode. Pass {@code null} to draw only the focus rectangle.
    */
-  private void DrawFocusRect(int color) {
+  private void redrawOverlay(List<Barcode> barcodes) {
+    overlayBarcodes = barcodes;
 
-    if (mCameraView != null) {
-      int height = mCameraView.getHeight();
-      int width = mCameraView.getWidth();
-
-      int left, right, top, bottom, diameter;
-
-      diameter = width;
-      if (height < width) {
-        diameter = height;
-      }
-
-      int offset = (int) ((1 - DetectorSize) * diameter);
-      diameter -= offset;
-
-      canvas = holder.lockCanvas();
-      canvas.drawColor(0, PorterDuff.Mode.CLEAR);
-      // border's properties
-      paint = new Paint();
-      paint.setStyle(Paint.Style.STROKE);
-      paint.setColor(color);
-      paint.setStrokeWidth(5);
-
-      left = width / 2 - diameter / 2;
-      top = height / 2 - diameter / 2;
-      right = width / 2 + diameter / 2;
-      bottom = height / 2 + diameter / 2;
-
-      // Changing the value of x in diameter/x will change the size of the box ;
-      // inversely proportionate to x
-      if (DetectorSize <= 0.3) {
-        canvas.drawRect(new RectF(left, top, right, bottom), paint);
-      } else {
-        canvas.drawRoundRect(new RectF(left, top, right, bottom), 100, 100, paint);
-      }
-
-      holder.unlockCanvasAndPost(canvas);
+    if (mCameraView == null || holder == null) {
+      return;
     }
 
+    synchronized (overlayLock) {
+      Canvas c = holder.lockCanvas();
+      if (c == null) {
+        return;
+      }
+      try {
+        c.drawColor(0, PorterDuff.Mode.CLEAR);
+
+        int width = mCameraView.getWidth();
+        int height = mCameraView.getHeight();
+        int diameter = Math.min(width, height);
+        diameter -= (int) ((1 - DetectorSize) * diameter);
+
+        float left = width / 2f - diameter / 2f;
+        float top = height / 2f - diameter / 2f;
+        float right = width / 2f + diameter / 2f;
+        float bottom = height / 2f + diameter / 2f;
+
+        Paint focusPaint = new Paint();
+        focusPaint.setStyle(Paint.Style.STROKE);
+        focusPaint.setColor(Color.WHITE);
+        focusPaint.setStrokeWidth(5);
+        if (DetectorSize <= 0.3) {
+          c.drawRect(new RectF(left, top, right, bottom), focusPaint);
+        } else {
+          c.drawRoundRect(new RectF(left, top, right, bottom), 100, 100, focusPaint);
+        }
+
+        if (barcodes != null && cropSide > 0) {
+          Paint borderPaint = new Paint();
+          borderPaint.setStyle(Paint.Style.STROKE);
+          borderPaint.setColor(Color.parseColor("#00E676"));
+          borderPaint.setStrokeWidth(6);
+          borderPaint.setAntiAlias(true);
+          for (Barcode barcode : barcodes) {
+            Path path = barcodeBorderPath(barcode, left, top, diameter);
+            if (path != null) {
+              c.drawPath(path, borderPaint);
+            }
+          }
+        }
+      } finally {
+        holder.unlockCanvasAndPost(c);
+      }
+    }
+  }
+
+  /**
+   * Maps a barcode's corner points (in crop-pixel space) into a closed Path in
+   * overlay/view space, scaling the square crop onto the focus rectangle.
+   */
+  private Path barcodeBorderPath(Barcode barcode, float focusLeft, float focusTop, float viewDiameter) {
+    float[] xs = new float[4];
+    float[] ys = new float[4];
+
+    Point[] corners = barcode.getCornerPoints();
+    if (corners != null && corners.length == 4) {
+      for (int i = 0; i < 4; i++) {
+        xs[i] = corners[i].x;
+        ys[i] = corners[i].y;
+      }
+    } else {
+      Rect box = barcode.getBoundingBox();
+      if (box == null) {
+        return null;
+      }
+      xs[0] = box.left;  ys[0] = box.top;
+      xs[1] = box.right; ys[1] = box.top;
+      xs[2] = box.right; ys[2] = box.bottom;
+      xs[3] = box.left;  ys[3] = box.bottom;
+    }
+
+    Path path = new Path();
+    for (int i = 0; i < 4; i++) {
+      float nx = xs[i] / cropSide;
+      float ny = ys[i] / cropSide;
+      // The preview is rotated 180 degrees (scaleX/Y = -1) when rotateCamera is
+      // set, so mirror the points to keep the border aligned.
+      if (rotateCamera) {
+        nx = 1 - nx;
+        ny = 1 - ny;
+      }
+      float vx = focusLeft + nx * viewDiameter;
+      float vy = focusTop + ny * viewDiameter;
+      if (i == 0) {
+        path.moveTo(vx, vy);
+      } else {
+        path.lineTo(vx, vy);
+      }
+    }
+    path.close();
+    return path;
+  }
+
+  // --------------------------------------------------------------------------
+  // | Scan confirmation
+  // --------------------------------------------------------------------------
+
+  private void setupConfirmationUi() {
+    freezeFrame = findViewById(getResources().getIdentifier("freeze_frame", "id", getPackageName()));
+    confirmPanel = findViewById(getResources().getIdentifier("confirm_panel", "id", getPackageName()));
+    confirmText = findViewById(getResources().getIdentifier("confirm_text", "id", getPackageName()));
+    confirmButton = findViewById(getResources().getIdentifier("confirm_button", "id", getPackageName()));
+    retryButton = findViewById(getResources().getIdentifier("retry_button", "id", getPackageName()));
+
+    if (confirmButton != null) {
+      confirmButton.setText(getResources().getIdentifier("scan_confirm", "string", getPackageName()));
+      confirmButton.setOnClickListener(new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+          if (pendingPayload != null) {
+            finishWithResult(pendingPayload);
+          }
+        }
+      });
+    }
+    if (retryButton != null) {
+      retryButton.setText(getResources().getIdentifier("scan_retry", "string", getPackageName()));
+      retryButton.setOnClickListener(new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+          exitConfirmation();
+        }
+      });
+    }
+  }
+
+  /** Freezes the preview on the detected frame and shows the Confirm/Retry prompt. */
+  private void enterConfirmation(JSONArray payload, List<Barcode> barCodes) {
+    awaitingConfirmation = true;
+    pendingPayload = payload;
+
+    final Bitmap frozen = (mCameraView != null) ? mCameraView.getBitmap() : null;
+    final int count = payload.length();
+    final String firstValue = (barCodes != null && !barCodes.isEmpty()) ? rawValueOf(barCodes.get(0)) : null;
+
+    // Draw the detected border(s) and keep them on screen while confirming.
+    redrawOverlay(barCodes);
+
+    runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        if (frozen != null && freezeFrame != null) {
+          freezeFrame.setImageBitmap(frozen);
+          freezeFrame.setVisibility(View.VISIBLE);
+        }
+        if (confirmText != null) {
+          if (multiple) {
+            confirmText.setText(getString(
+                getResources().getIdentifier("scan_confirm_count", "string", getPackageName()), count));
+          } else {
+            confirmText.setText(firstValue);
+          }
+        }
+        if (confirmPanel != null) {
+          confirmPanel.setVisibility(View.VISIBLE);
+        }
+      }
+    });
+  }
+
+  /** Dismisses the confirmation prompt and resumes scanning. */
+  private void exitConfirmation() {
+    if (freezeFrame != null) {
+      freezeFrame.setVisibility(View.GONE);
+      freezeFrame.setImageBitmap(null);
+    }
+    if (confirmPanel != null) {
+      confirmPanel.setVisibility(View.GONE);
+    }
+    pendingPayload = null;
+    redrawOverlay(null);
+    // Resume the analyzer last, once the UI has been reset.
+    awaitingConfirmation = false;
   }
 }
