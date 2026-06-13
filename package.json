@@ -22,7 +22,7 @@
   },
   "scripts": {
     "build": "npm run lint && npm run clean && npm run transpile",
-    "clean": "mkdir -p 'www' && find 'www' ! -path 'www' -delete",
+    "clean": "rimraf www",
     "lint": "eslint . --ext .js,.ts --cache && tsc -p tsconfig.lint.json",
     "test": "npm run test:android:build",
     "test:android:deps": "cd test/scan-test-app && npm install",
