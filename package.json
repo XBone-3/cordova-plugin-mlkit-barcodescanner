@@ -1,9 +1,9 @@
 {
-  "name": "cordova-plugin-mlkit-barcodescanner",
+  "name": "@xbone-3/cordova-plugin-mlkit-barcodescanner",
   "version": "4.0.0",
   "description": "Google MLKit Vision Barcode Scanner Plugin for Cordova",
   "cordova": {
-    "id": "cordova-plugin-mlkit-barcodescanner",
+    "id": "@xbone-3/cordova-plugin-mlkit-barcodescanner",
     "platforms": [
       "android",
       "ios"

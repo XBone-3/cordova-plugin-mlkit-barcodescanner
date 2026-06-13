@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
-<plugin id="cordova-plugin-mlkit-barcodescanner"
+<plugin id="@xbone-3/cordova-plugin-mlkit-barcodescanner"
   version="4.0.0"
   xmlns="http://apache.org/cordova/ns/plugins/1.0"
   xmlns:android="http://schemas.android.com/apk/res/android">
-  <name>cordova-plugin-mlkit-barcodescanner</name>
+  <name>@xbone-3/cordova-plugin-mlkit-barcodescanner</name>
   <js-module name="cordova-plugin-mlkit-barcodescanner"
     src="www/BarcodeScanner.plugin.js">
     <clobbers target="cordova.plugins.mlkit.barcodeScanner" />
