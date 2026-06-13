@@ -1,7 +1,7 @@
 {
   "name": "cordova-plugin-mlkit-barcodescanner",
   "version": "4.0.0",
-  "description": "Google MLKit Vision Barcode Scanner Plugin",
+  "description": "Google MLKit Vision Barcode Scanner Plugin for Cordova",
   "cordova": {
     "id": "cordova-plugin-mlkit-barcodescanner",
     "platforms": [
@@ -42,7 +42,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/XBone-3/cordova-plugin-mlkit-barcodescanner.git"
+    "url": "git+https://github.com/XBone-3/cordova-plugin-mlkit-barcodescanner.git"
   },
   "homepage": "https://github.com/XBone-3/cordova-plugin-mlkit-barcodescanner#readme",
   "devDependencies": {
@@ -56,5 +56,12 @@
     "rollup": "2.56.3",
     "typescript": "4.4.4",
     "tslib": "2.3.1"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/XBone-3/cordova-plugin-mlkit-barcodescanner/issues"
+  },
+  "directories": {
+    "test": "test"
+  },
+  "dependencies": {}
 }
