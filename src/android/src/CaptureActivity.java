@@ -52,8 +52,13 @@ import com.google.mlkit.vision.barcode.BarcodeScanning;
 import com.google.mlkit.vision.common.InputImage;
 import com.mobisys.cordova.plugins.mlkit.barcode.scanner.utils.BitmapUtils;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -63,9 +68,15 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
   public Integer BarcodeFormats;
   public double DetectorSize = .5;
 
-  public static final String BarcodeFormat = "MLKitBarcodeFormat";
-  public static final String BarcodeType = "MLKitBarcodeType";
-  public static final String BarcodeValue = "MLKitBarcodeValue";
+  // JSON string extra holding an array of [text, format, type] triples.
+  public static final String BarcodePayload = "MLKitBarcodes";
+
+  private boolean continuous = false;
+  private boolean multiple = false;
+
+  // Raw values already streamed back in continuous mode, so each barcode is
+  // reported only once per session.
+  private final Set<String> emittedValues = new HashSet<>();
 
   private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
   private ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -98,6 +109,8 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
     // read parameters from the intent used to launch the activity.
     BarcodeFormats = getIntent().getIntExtra("BarcodeFormats", 1234);
     DetectorSize = getIntent().getDoubleExtra("DetectorSize", .5);
+    continuous = getIntent().getBooleanExtra("Continuous", false);
+    multiple = getIntent().getBooleanExtra("Multiple", false);
 
     if (DetectorSize <= 0 || DetectorSize >= 1) { // setting boundary detectorSize must be between 0 to 1.
       DetectorSize = 0.5;
@@ -357,28 +370,14 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
                  * getPackageName())); imageView.setImageBitmap(bitmap);
                  */
 
-                if (barCodes.size() > 0) {
-                  for (Barcode barcode : barCodes) {
-                    // Toast.makeText(CaptureActivity.this, "FOUND: " + barcode.getDisplayValue(),
-                    // Toast.LENGTH_SHORT).show();
-                    Intent data = new Intent();
-                    String value = barcode.getRawValue();
+                if (barCodes.size() == 0) {
+                  return;
+                }
 
-                    // rawValue returns null if string is not UTF-8 encoded.
-                    // If that's the case, we will decode it as ASCII,
-                    // because it's the most common encoding for barcodes.
-                    // e.g. https://www.barcodefaq.com/1d/code-128/
-                    if (barcode.getRawValue() == null) {
-                      value = new String(barcode.getRawBytes(), StandardCharsets.US_ASCII);
-                    }
-
-                    data.putExtra(BarcodeFormat, barcode.getFormat());
-                    data.putExtra(BarcodeType, barcode.getValueType());
-                    data.putExtra(BarcodeValue, value);
-                    setResult(CommonStatusCodes.SUCCESS, data);
-                    finish();
-
-                  }
+                try {
+                  handleBarcodes(barCodes);
+                } catch (JSONException e) {
+                  e.printStackTrace();
                 }
               }
             }).addOnFailureListener(new OnFailureListener() {
@@ -396,7 +395,83 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
 
     });
 
+    // Release any use cases still bound from a previous scan before rebinding,
+    // otherwise reopening the scanner can leave the preview/analyzer detached
+    // (the camera appears frozen and every subsequent scan gets cancelled).
+    cameraProvider.unbindAll();
+
     camera = cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, imageAnalysis, preview);
+  }
+
+  /**
+   * Turns the detected barcodes into a result payload. In continuous mode the
+   * camera stays open and only newly seen codes are streamed back; otherwise
+   * the (first or all) codes are returned and the activity finishes.
+   */
+  private void handleBarcodes(List<Barcode> barCodes) throws JSONException {
+    JSONArray payload = new JSONArray();
+
+    for (Barcode barcode : barCodes) {
+      String value = rawValueOf(barcode);
+      if (value == null) {
+        continue;
+      }
+
+      if (continuous && !emittedValues.add(value)) {
+        // Already streamed this code in a previous frame.
+        continue;
+      }
+
+      payload.put(toTriple(barcode, value));
+
+      if (!multiple) {
+        // Single-result mode: one code is enough.
+        break;
+      }
+    }
+
+    if (payload.length() == 0) {
+      return;
+    }
+
+    if (continuous) {
+      MLKitBarcodeScanner.sendContinuousResult(payload);
+    } else {
+      Intent data = new Intent();
+      data.putExtra(BarcodePayload, payload.toString());
+      setResult(CommonStatusCodes.SUCCESS, data);
+      finish();
+    }
+  }
+
+  /**
+   * Returns the barcode's raw value, falling back to ASCII decoding when it is
+   * not UTF-8 encoded (the most common case for 1D barcodes).
+   * e.g. https://www.barcodefaq.com/1d/code-128/
+   */
+  private String rawValueOf(Barcode barcode) {
+    String value = barcode.getRawValue();
+    if (value == null && barcode.getRawBytes() != null) {
+      value = new String(barcode.getRawBytes(), StandardCharsets.US_ASCII);
+    }
+    return value;
+  }
+
+  /** Encodes a barcode as a [text, format, type] triple. */
+  private JSONArray toTriple(Barcode barcode, String value) throws JSONException {
+    JSONArray triple = new JSONArray();
+    triple.put(value);
+    triple.put(barcode.getFormat());
+    triple.put(barcode.getValueType());
+    return triple;
+  }
+
+  @Override
+  protected void onDestroy() {
+    super.onDestroy();
+    if (executor != null) {
+      executor.shutdown();
+    }
   }
 
   /**

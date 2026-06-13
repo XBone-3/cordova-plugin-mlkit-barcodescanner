@@ -20,6 +20,18 @@ export interface IOptions {
   vibrateOnSuccess?: boolean;
   detectorSize?: number;
   rotateCamera?: boolean;
+  /**
+   * Keep the camera open and stream every newly detected barcode back to the
+   * success callback (which may be invoked many times). The scanner closes
+   * when the user presses back, surfacing a cancelled error. Default: false.
+   */
+  continuous?: boolean;
+  /**
+   * Detect every barcode visible in a frame instead of just the first one.
+   * When enabled the success callback receives an array of results. Default:
+   * false.
+   */
+  multiple?: boolean;
 }
 
 export interface IConfig {
@@ -28,6 +40,8 @@ export interface IConfig {
   vibrateOnSuccess: boolean;
   detectorSize: number;
   rotateCamera: boolean;
+  continuous: boolean;
+  multiple: boolean;
 }
 
 export interface IResult {

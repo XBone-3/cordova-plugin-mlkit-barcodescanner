@@ -115,10 +115,29 @@ const defaultOptions = {
   vibrateOnSuccess: false,
   detectorSize: 0.6,
   rotateCamera: false,
+  continuous: false,
+  multiple: false,
 };
 ```
 
+#### `continuous`
+
+When `true`, the camera stays open and every newly detected barcode is streamed
+back to the success callback (which may therefore be called many times). Each
+distinct barcode is reported only once. The scanner stays open until the user
+presses back, at which point the error callback is invoked with
+`{ cancelled: true }`. Default: `false` (the camera closes after the first
+result).
+
+#### `multiple`
+
+When `true`, every barcode visible in a frame is detected and the success
+callback receives an **array** of results instead of a single result. Can be
+combined with `continuous`. Default: `false`.
+
 ### Output/Return value
+
+With the default options the success callback receives a single result:
 
 ```javascript
 result: {
@@ -126,6 +145,16 @@ result: {
   format: string;
   type: string;
 }
+```
+
+When `multiple: true`, it instead receives an array of such results:
+
+```javascript
+result: Array<{
+  text: string;
+  format: string;
+  type: string;
+}>;
 ```
 
 ## Known Issues

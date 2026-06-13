@@ -33,7 +33,13 @@ import java.io.IOException;
  */
 public class MLKitBarcodeScanner extends CordovaPlugin {
 
+  private static final String TAG = "MLKitBarcodeScanner";
   private static final int RC_BARCODE_CAPTURE = 9001;
+
+  // Active plugin instance, used by CaptureActivity to stream results back
+  // while the camera stays open in continuous mode.
+  private static MLKitBarcodeScanner _Instance;
+
   private CallbackContext _CallbackContext;
   private Boolean _BeepOnSuccess;
   private Boolean _VibrateOnSuccess;
@@ -42,6 +48,8 @@ public class MLKitBarcodeScanner extends CordovaPlugin {
 
   public void initialize(CordovaInterface cordova, CordovaWebView webView) {
     super.initialize(cordova, webView);
+
+    _Instance = this;
 
     Context context = cordova.getContext();
 
@@ -121,11 +129,20 @@ public class MLKitBarcodeScanner extends CordovaPlugin {
     intent.putExtra("BarcodeFormats", config.optInt("barcodeFormats", 1234));
     intent.putExtra("DetectorSize", config.optDouble("detectorSize", 0.5));
     intent.putExtra("RotateCamera", config.optBoolean("rotateCamera", false));
+    intent.putExtra("Continuous", config.optBoolean("continuous", false));
+    intent.putExtra("Multiple", config.optBoolean("multiple", false));
 
     _BeepOnSuccess = config.optBoolean("beepOnSuccess", false);
     _VibrateOnSuccess = config.optBoolean("vibrateOnSuccess", false);
 
-    this.cordova.setActivityResultCallback(this);
+    // NOTE: do not call setActivityResultCallback(this) here.
+    // startActivityForResult() already registers this plugin as the result
+    // callback. Calling it twice makes the second registration treat the first
+    // as a still-pending activity and cancel it via a synthetic
+    // onActivityResult(activityResultRequestCode, RESULT_CANCELED, null). Once
+    // activityResultRequestCode has been set to RC_BARCODE_CAPTURE by an
+    // earlier scan, that synthetic cancel passes our guard and aborts every
+    // subsequent scan before the camera opens.
     this.cordova.startActivityForResult(this, intent, RC_BARCODE_CAPTURE);
   }
 
@@ -134,40 +151,63 @@ public class MLKitBarcodeScanner extends CordovaPlugin {
     super.onActivityResult(requestCode, resultCode, data);
 
     if (requestCode == RC_BARCODE_CAPTURE) {
-      if (resultCode == CommonStatusCodes.SUCCESS) {
-        if (data != null) {
-          Integer barcodeFormat = data.getIntExtra(CaptureActivity.BarcodeFormat, 0);
-          Integer barcodeType = data.getIntExtra(CaptureActivity.BarcodeType, 0);
-          String barcodeValue = data.getStringExtra(CaptureActivity.BarcodeValue);
-          JSONArray result = new JSONArray();
-          result.put(barcodeValue);
-          result.put(barcodeFormat);
-          result.put(barcodeType);
+      // CommonStatusCodes.SUCCESS and Activity.RESULT_CANCELED are both 0, so a
+      // successful scan can only be distinguished from a cancellation (back
+      // press / permission denied) by the presence of result data.
+      if (resultCode == CommonStatusCodes.SUCCESS && data != null) {
+        String payload = data.getStringExtra(CaptureActivity.BarcodePayload);
+        try {
+          // The payload is an array of [text, format, type] triples (one per
+          // detected barcode).
+          JSONArray result = new JSONArray(payload);
           _CallbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, result));
-
-          if (_BeepOnSuccess) {
-            _MediaPlayer.start();
-          }
-
-          if (_VibrateOnSuccess) {
-            Integer duration = 200;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-              _Vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE));
-            } else {
-              // deprecated in API 26 aka Oreo
-              _Vibrator.vibrate(duration);
-            }
-          }
-
-          Log.d("MLKitBarcodeScanner", "Barcode read: " + barcodeValue);
+          notifyScan();
+          Log.d(TAG, "Barcodes read: " + payload);
+        } catch (JSONException e) {
+          _CallbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, e.toString()));
         }
       } else {
-        String err = data.getStringExtra("err");
+        // No result data means the user cancelled (back press / permission
+        // denied). Report it as a cancellation rather than crashing on a null
+        // intent. A null first element is mapped to USER_CANCELLED in JS.
+        String err = (data != null) ? data.getStringExtra("err") : null;
         JSONArray result = new JSONArray();
         result.put(err);
         result.put("");
         result.put("");
         _CallbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, result));
+      }
+    }
+  }
+
+  /**
+   * Streams a batch of barcodes back to JS while keeping the callback (and the
+   * camera) alive. Called from CaptureActivity in continuous mode.
+   */
+  static void sendContinuousResult(JSONArray barcodes) {
+    MLKitBarcodeScanner self = _Instance;
+    if (self == null || self._CallbackContext == null) {
+      return;
+    }
+    PluginResult result = new PluginResult(PluginResult.Status.OK, barcodes);
+    result.setKeepCallback(true);
+    self._CallbackContext.sendPluginResult(result);
+    self.notifyScan();
+  }
+
+  /** Plays the success beep and/or vibrates, honouring the scan options. */
+  private void notifyScan() {
+    if (_BeepOnSuccess) {
+      _MediaPlayer.start();
+    }
+
+    if (_VibrateOnSuccess) {
+      int duration = 200;
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        _Vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE));
+      } else {
+        // deprecated in API 26 aka Oreo
+        _Vibrator.vibrate(duration);
       }
     }
   }

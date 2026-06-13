@@ -38,7 +38,7 @@ export class MLKitBarcodeScanner {
 
   scan(
     userOptions: IOptions,
-    success: (result: IResult) => unknown,
+    success: (result: IResult | IResult[]) => unknown,
     failure: (error: IError) => unknown,
   ): void {
     const barcodeFormats =
@@ -54,21 +54,36 @@ export class MLKitBarcodeScanner {
 
   private sendScanRequest(
     config: IConfig,
-    successCallback: (result: IResult) => unknown,
+    successCallback: (result: IResult | IResult[]) => unknown,
     failureCallback: (error: IError) => unknown,
   ): void {
+    type Triple = [string, number, number];
     cordova.exec(
-      (data: [string, number, number]) => {
-        const [text, format, type] = data;
-        successCallback({
+      (data: Triple | Triple[]) => {
+        // A single scan can arrive as a flat triple [text, format, type]
+        // (iOS / legacy), while multi and continuous scans send an array of
+        // such triples. Normalise to an array either way.
+        const triples: Triple[] = Array.isArray(data[0])
+          ? (data as Triple[])
+          : [data as Triple];
+
+        const results: IResult[] = triples.map(([text, format, type]) => ({
           text,
           format: this.getBarcodeFormat(format),
           type: this.getBarcodeType(type),
-        });
+        }));
+
+        successCallback(config.multiple ? results : results[0]);
       },
-      (err: (string | null)[]) => {
-        switch (err[0]) {
+      (err: string | (string | null)[] | null) => {
+        // Plugin errors arrive as an array ([code, ...]), but Cordova
+        // framework errors (e.g. "Class not found") arrive as a plain
+        // string. Normalise to the error code/message either way.
+        const code = Array.isArray(err) ? err[0] : err;
+
+        switch (code) {
           case null:
+          case undefined:
           case 'USER_CANCELLED':
             failureCallback({
               cancelled: true,
@@ -84,12 +99,12 @@ export class MLKitBarcodeScanner {
           default:
             failureCallback({
               cancelled: false,
-              message: err[0] || 'Unknown Error',
+              message: code || 'Unknown Error',
             });
             break;
         }
       },
-      'cordova-plugin-mlkit-barcode-scanner',
+      'cordova-plugin-mlkit-barcodescanner',
       'startScan',
       [config],
     );

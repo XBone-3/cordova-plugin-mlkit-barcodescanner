@@ -20,4 +20,6 @@ export const defaultOptions: Required<IOptions> = Object.freeze({
   vibrateOnSuccess: false,
   detectorSize: 0.6,
   rotateCamera: false,
+  continuous: false,
+  multiple: false,
 });
