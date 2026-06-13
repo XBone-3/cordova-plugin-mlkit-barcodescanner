@@ -62,7 +62,8 @@ function scan() {
   for (const pair of formData.entries()) {
     const key = pair[0];
     const value = pair[1];
-    options[key] = value === 'true';
+    // detectorSize is a number (scan-area fraction); the rest are boolean switches.
+    options[key] = key === 'detectorSize' ? parseFloat(value) : value === 'true';
   }
 
   scanCount += 1;
@@ -76,4 +77,10 @@ function scan() {
 function onDeviceReady() {
   console.log(TAG, 'Running cordova-' + cordova.platformId + '@' + cordova.version);
   document.getElementById('scan').onclick = scan;
+
+  const detectorSize = document.getElementById('detectorSizeRange');
+  const detectorSizeValue = document.getElementById('detectorSizeValue');
+  detectorSize.oninput = () => {
+    detectorSizeValue.textContent = detectorSize.value;
+  };
 }
