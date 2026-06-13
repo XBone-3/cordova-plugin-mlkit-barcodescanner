@@ -14,7 +14,7 @@
     "cordova-ios",
     "cordova-android"
   ],
-  "author": "Florian Biebel",
+  "author": "XBone-3",
   "license": "MIT",
   "main": "www/BarcodeScanner.contract.js",
   "types": "www/BarcodeScanner.contract.d.ts",
@@ -37,7 +37,8 @@
   "files": [
     "/src/",
     "/www/**/*.{js,js.map,d.ts}",
-    "/plugin.xml"
+    "/plugin.xml",
+    "/CHANGELOG.md"
   ],
   "repository": {
     "type": "git",
