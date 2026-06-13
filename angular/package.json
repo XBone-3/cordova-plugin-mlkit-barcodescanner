@@ -1,0 +1,43 @@
+{
+  "name": "cordova-plugin-mlkit-barcodescanner-angular",
+  "version": "3.0.7",
+  "description": "Angular wrapper (Promise + Observable API) for cordova-plugin-mlkit-barcodescanner.",
+  "keywords": [
+    "cordova",
+    "angular",
+    "ionic",
+    "barcode",
+    "qrcode",
+    "mlkit",
+    "scanner"
+  ],
+  "author": "Florian Biebel",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/XBone-3/cordova-plugin-mlkit-barcodescanner.git",
+    "directory": "angular"
+  },
+  "homepage": "https://github.com/XBone-3/cordova-plugin-mlkit-barcodescanner/tree/master/angular#readme",
+  "scripts": {
+    "build": "ng-packagr -p ng-package.json",
+    "prepublishOnly": "echo 'Publish from the built dist/ folder, not this source package.' && exit 1"
+  },
+  "peerDependencies": {
+    "@angular/core": ">=14.0.0",
+    "cordova-plugin-mlkit-barcodescanner": ">=3.0.7",
+    "rxjs": ">=6.6.0"
+  },
+  "devDependencies": {
+    "@angular/compiler": "^17.3.0",
+    "@angular/compiler-cli": "^17.3.0",
+    "@angular/core": "^17.3.0",
+    "cordova-plugin-mlkit-barcodescanner": "file:..",
+    "ng-packagr": "^17.3.0",
+    "rxjs": "^7.8.0",
+    "tslib": "^2.3.0",
+    "typescript": "~5.4.0",
+    "zone.js": "^0.14.0"
+  },
+  "sideEffects": false
+}

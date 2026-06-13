@@ -16,6 +16,7 @@ gradlew*
 
 # Build directory
 www/
+angular/dist/
 
 # Other files
 .eslintcache

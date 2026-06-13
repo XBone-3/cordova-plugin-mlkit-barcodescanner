@@ -16,7 +16,7 @@ const config = {
     sourceType: 'module',
   },
   plugins: ['@typescript-eslint'],
-  ignorePatterns: ['www/**', 'test/**'],
+  ignorePatterns: ['www/**', 'test/**', 'angular/**'],
   rules: {
     'no-prototype-builtins': 'off',
   },

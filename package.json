@@ -17,6 +17,10 @@
   "author": "Florian Biebel",
   "license": "MIT",
   "main": "www/BarcodeScanner.contract.js",
+  "types": "www/BarcodeScanner.contract.d.ts",
+  "workspaces": [
+    "angular"
+  ],
   "engines": {
     "node": ">=10.0.0"
   },
@@ -31,6 +35,7 @@
     "test:android:run": "cd test/scan-test-app && npx cordova run android",
     "test:android": "npm run test:android:deps && npm run test:android:prepare && npm run test:android:build && npm run test:android:run",
     "transpile": "rollup --config --silent",
+    "build:angular": "npm run build -w angular",
     "prepublishOnly": "npm run build"
   },
   "files": [
