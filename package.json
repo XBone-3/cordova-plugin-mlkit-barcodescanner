@@ -1,6 +1,6 @@
 {
   "name": "cordova-plugin-mlkit-barcodescanner",
-  "version": "3.0.7",
+  "version": "4.0.0",
   "description": "Google MLKit Vision Barcode Scanner Plugin",
   "cordova": {
     "id": "cordova-plugin-mlkit-barcodescanner",
@@ -17,6 +17,7 @@
   "author": "Florian Biebel",
   "license": "MIT",
   "main": "www/BarcodeScanner.contract.js",
+  "types": "www/BarcodeScanner.contract.d.ts",
   "engines": {
     "node": ">=10.0.0"
   },
