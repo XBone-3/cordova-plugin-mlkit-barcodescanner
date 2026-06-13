@@ -91,8 +91,11 @@ cordova.plugins.mlkit.barcodeScanner.scan(
 The default options are shown below.
 All values are optional.
 
-Note that the `detectorSize` value must be between `0` and `1`, because it determines how many percent of the screen should be covered by the detector.
-If the value is greater than 1 the detector will not be visible on the screen.
+`detectorSize` is the fraction of the **screen** that is scanned (a value in the
+range `(0, 1]`). It is a centred rectangle covering that percentage of both the
+width and the height, so only barcodes the user sees inside the focus box are
+detected. A value of `1` scans the **whole screen** and draws no focus box.
+Values outside `(0, 1]` fall back to the default. (Android.)
 
 ```javascript
 const defaultOptions = {

@@ -90,9 +90,20 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
   // reported only once per session.
   private final Set<String> emittedValues = new HashSet<>();
 
-  // Side length (px) of the square crop last handed to ML Kit, used to map
-  // barcode corner points back into overlay/view coordinates.
-  private volatile float cropSide = 0;
+  // Overlay/view dimensions, captured from the surface so the analyzer thread
+  // can compute the image<->view transform.
+  private volatile int viewWidth = 0;
+  private volatile int viewHeight = 0;
+
+  // Mapping from the cropped frame handed to ML Kit back to view coordinates:
+  // viewPoint = (cropOrigin + barcodePoint) * fillScale + fillOffset. Matches
+  // PreviewView's default FILL_CENTER scaling.
+  private volatile int cropLeft = 0;
+  private volatile int cropTop = 0;
+  private volatile float fillScale = 1;
+  private volatile float fillOffsetX = 0;
+  private volatile float fillOffsetY = 0;
+  private volatile boolean haveMapping = false;
 
   // Serialises overlay canvas access between the analyzer thread and the UI
   // thread (surface callbacks, confirm/retry).
@@ -145,8 +156,10 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
     // Confirmation is meaningless while continuously streaming results.
     confirmation = getIntent().getBooleanExtra("Confirmation", false) && !continuous;
 
-    if (DetectorSize <= 0 || DetectorSize >= 1) { // setting boundary detectorSize must be between 0 to 1.
-      DetectorSize = 0.5;
+    // DetectorSize is the fraction of the screen that is scanned (0..1]; 1
+    // means the whole screen. Out-of-range values fall back to the default.
+    if (DetectorSize <= 0 || DetectorSize > 1) {
+      DetectorSize = 0.6;
     }
 
     setupConfirmationUi();
@@ -274,7 +287,9 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
   }
 
   @Override
-  public void surfaceChanged(SurfaceHolder surfaceHolder, int i, int i1, int i2) {
+  public void surfaceChanged(SurfaceHolder surfaceHolder, int i, int width, int height) {
+    viewWidth = width;
+    viewHeight = height;
     redrawOverlay(overlayBarcodes);
   }
 
@@ -377,32 +392,51 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
 
         Bitmap bmp = BitmapUtils.getBitmap(image);
 
-        int height = bmp.getHeight();
         int width = bmp.getWidth();
+        int height = bmp.getHeight();
 
-        int left, right, top, bottom, diameter, boxHeight, boxWidth;
+        // The scan area is DetectorSize (0..1) of the screen, centred. Map that
+        // view rectangle back into image pixels so ML Kit only sees what the
+        // user sees inside the focus box (the whole screen at DetectorSize 1).
+        int vw = viewWidth > 0 ? viewWidth : width;
+        int vh = viewHeight > 0 ? viewHeight : height;
 
-        diameter = width;
-        if (height < width) {
-          diameter = height;
+        // PreviewView FILL_CENTER: scale the image up to cover the view.
+        float scale = Math.max((float) vw / width, (float) vh / height);
+        float offX = (vw - width * scale) / 2f;
+        float offY = (vh - height * scale) / 2f;
+
+        double ds = DetectorSize;
+        float fLeftV = (float) (vw * (1 - ds) / 2);
+        float fTopV = (float) (vh * (1 - ds) / 2);
+        float fRightV = (float) (vw * (1 + ds) / 2);
+        float fBotV = (float) (vh * (1 + ds) / 2);
+
+        int left = clampInt((fLeftV - offX) / scale, 0, width);
+        int top = clampInt((fTopV - offY) / scale, 0, height);
+        int right = clampInt((fRightV - offX) / scale, 0, width);
+        int bottom = clampInt((fBotV - offY) / scale, 0, height);
+
+        int boxWidth = right - left;
+        int boxHeight = bottom - top;
+        if (boxWidth <= 0 || boxHeight <= 0) {
+          left = 0;
+          top = 0;
+          boxWidth = width;
+          boxHeight = height;
         }
 
-        int offset = (int) ((1 - DetectorSize) * diameter);
-        diameter -= offset;
-
-        left = width / 2 - diameter / 2;
-        top = height / 2 - diameter / 2;
-        right = width / 2 + diameter / 2;
-        bottom = height / 2 + diameter / 2;
-
-        boxHeight = bottom - top;
-        boxWidth = right - left;
-
         Bitmap bitmap = Bitmap.createBitmap(bmp, left, top, boxWidth, boxHeight);
+
         // BitmapUtils.getBitmap() has already rotated the frame upright, so the
         // crop is upright too; pass rotation 0 so ML Kit reports corner points
-        // directly in crop-pixel space (boxWidth == boxHeight).
-        cropSide = boxWidth;
+        // directly in crop-pixel space. Record the mapping for the overlay.
+        cropLeft = left;
+        cropTop = top;
+        fillScale = scale;
+        fillOffsetX = offX;
+        fillOffsetY = offY;
+        haveMapping = true;
         scanner.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener(new OnSuccessListener<List<Barcode>>() {
               @Override
@@ -554,32 +588,34 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
 
         int width = mCameraView.getWidth();
         int height = mCameraView.getHeight();
-        int diameter = Math.min(width, height);
-        diameter -= (int) ((1 - DetectorSize) * diameter);
 
-        float left = width / 2f - diameter / 2f;
-        float top = height / 2f - diameter / 2f;
-        float right = width / 2f + diameter / 2f;
-        float bottom = height / 2f + diameter / 2f;
+        // The focus box is DetectorSize of the screen in both dimensions,
+        // centred. At full screen (DetectorSize >= 1) there is no box to draw.
+        if (DetectorSize < 1) {
+          float left = (float) (width * (1 - DetectorSize) / 2);
+          float top = (float) (height * (1 - DetectorSize) / 2);
+          float right = (float) (width * (1 + DetectorSize) / 2);
+          float bottom = (float) (height * (1 + DetectorSize) / 2);
 
-        Paint focusPaint = new Paint();
-        focusPaint.setStyle(Paint.Style.STROKE);
-        focusPaint.setColor(Color.WHITE);
-        focusPaint.setStrokeWidth(5);
-        if (DetectorSize <= 0.3) {
-          c.drawRect(new RectF(left, top, right, bottom), focusPaint);
-        } else {
-          c.drawRoundRect(new RectF(left, top, right, bottom), 100, 100, focusPaint);
+          Paint focusPaint = new Paint();
+          focusPaint.setStyle(Paint.Style.STROKE);
+          focusPaint.setColor(Color.WHITE);
+          focusPaint.setStrokeWidth(5);
+          if (DetectorSize <= 0.3) {
+            c.drawRect(new RectF(left, top, right, bottom), focusPaint);
+          } else {
+            c.drawRoundRect(new RectF(left, top, right, bottom), 100, 100, focusPaint);
+          }
         }
 
-        if (barcodes != null && cropSide > 0) {
+        if (barcodes != null && haveMapping) {
           Paint borderPaint = new Paint();
           borderPaint.setStyle(Paint.Style.STROKE);
           borderPaint.setColor(Color.parseColor("#00E676"));
           borderPaint.setStrokeWidth(6);
           borderPaint.setAntiAlias(true);
           for (Barcode barcode : barcodes) {
-            Path path = barcodeBorderPath(barcode, left, top, diameter);
+            Path path = barcodeBorderPath(barcode);
             if (path != null) {
               c.drawPath(path, borderPaint);
             }
@@ -592,10 +628,10 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
   }
 
   /**
-   * Maps a barcode's corner points (in crop-pixel space) into a closed Path in
-   * overlay/view space, scaling the square crop onto the focus rectangle.
+   * Maps a barcode's corner points (relative to the crop handed to ML Kit) into
+   * a closed Path in overlay/view space using the recorded FILL_CENTER mapping.
    */
-  private Path barcodeBorderPath(Barcode barcode, float focusLeft, float focusTop, float viewDiameter) {
+  private Path barcodeBorderPath(Barcode barcode) {
     float[] xs = new float[4];
     float[] ys = new float[4];
 
@@ -618,16 +654,15 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
 
     Path path = new Path();
     for (int i = 0; i < 4; i++) {
-      float nx = xs[i] / cropSide;
-      float ny = ys[i] / cropSide;
+      // Crop-relative -> full image -> view.
+      float vx = (cropLeft + xs[i]) * fillScale + fillOffsetX;
+      float vy = (cropTop + ys[i]) * fillScale + fillOffsetY;
       // The preview is rotated 180 degrees (scaleX/Y = -1) when rotateCamera is
       // set, so mirror the points to keep the border aligned.
       if (rotateCamera) {
-        nx = 1 - nx;
-        ny = 1 - ny;
+        vx = viewWidth - vx;
+        vy = viewHeight - vy;
       }
-      float vx = focusLeft + nx * viewDiameter;
-      float vy = focusTop + ny * viewDiameter;
       if (i == 0) {
         path.moveTo(vx, vy);
       } else {
@@ -636,6 +671,11 @@ public class CaptureActivity extends AppCompatActivity implements SurfaceHolder.
     }
     path.close();
     return path;
+  }
+
+  /** Clamps {@code value} into [min, max] and rounds to the nearest int. */
+  private static int clampInt(float value, int min, int max) {
+    return Math.max(min, Math.min(max, Math.round(value)));
   }
 
   // --------------------------------------------------------------------------
