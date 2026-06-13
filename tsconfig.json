@@ -1,5 +1,4 @@
 {
-  "extends": "@teckel.ts-internal/ts-config/tsconfig.json",
   "include": [
     "./**/.eslintrc.js",
     "./rollup.config.js",
@@ -8,6 +7,13 @@
   ],
   "exclude": ["./test/"],
   "compilerOptions": {
+    "target": "ES2019",
+    "moduleResolution": "node",
+    "lib": ["ES2019", "DOM"],
+    "declaration": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": false,
     "module": "ES2015",
     "outDir": "www",
     "skipLibCheck": true,
