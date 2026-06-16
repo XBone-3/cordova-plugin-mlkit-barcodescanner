@@ -25,12 +25,6 @@
     "build": "npm run lint && npm run clean && npm run transpile",
     "clean": "rimraf www",
     "lint": "eslint . --ext .js,.ts --cache && tsc -p tsconfig.lint.json",
-    "test": "npm run test:android:build",
-    "test:android:deps": "cd test/scan-test-app && npm install",
-    "test:android:prepare": "cd test/scan-test-app && npx cordova prepare android && npx cordova plugin add ../../ --link --force",
-    "test:android:build": "cd test/scan-test-app && npx cordova build android",
-    "test:android:run": "cd test/scan-test-app && npx cordova run android",
-    "test:android": "npm run test:android:deps && npm run test:android:prepare && npm run test:android:build && npm run test:android:run",
     "transpile": "rollup --config --silent",
     "prepublishOnly": "npm run build"
   },
