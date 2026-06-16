@@ -33,8 +33,8 @@ export interface IOptions {
    */
   multiple?: boolean;
   /**
-   * Draw a border around each barcode as it is detected in the camera
-   * preview, tracing the code's corner points. Default: false.
+   * Draw corner brackets around each barcode as it is detected in the camera
+   * preview, following the code's corner points. Default: true. (Android only.)
    */
   drawDetectionBorder?: boolean;
   /**
@@ -43,6 +43,23 @@ export interface IOptions {
    * in continuous mode. Default: false.
    */
   confirmation?: boolean;
+  /**
+   * Gradually zoom the camera in when nothing decodes for a moment, to read
+   * small or distant barcodes without the user having to move closer. Resets
+   * once a code is read or the user adjusts the zoom slider. Default: true.
+   * (Android only.)
+   */
+  autoZoom?: boolean;
+  /**
+   * Show a zoom slider in the camera UI so the user can zoom in/out manually.
+   * Default: true. (Android only.)
+   */
+  showZoomSlider?: boolean;
+  /**
+   * Show a button in the camera UI to pick an image from the gallery and scan
+   * it instead of using the live camera. Default: true. (Android only.)
+   */
+  galleryButton?: boolean;
 }
 
 export interface IConfig {
@@ -55,6 +72,9 @@ export interface IConfig {
   multiple: boolean;
   drawDetectionBorder: boolean;
   confirmation: boolean;
+  autoZoom: boolean;
+  showZoomSlider: boolean;
+  galleryButton: boolean;
 }
 
 export interface IResult {

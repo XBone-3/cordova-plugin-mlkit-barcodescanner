@@ -96,6 +96,17 @@ export class MLKitBarcodeScanner {
               message: 'Scanner already open.',
             });
             break;
+          case 'COMPLETED':
+            // The user tapped "Done" to end a continuous session. Results were
+            // already streamed via the success callback, so this is a graceful
+            // close (cancelled:true, like a back-press) rather than an error;
+            // the distinct message lets apps tell Done apart from a back-press
+            // if they care.
+            failureCallback({
+              cancelled: true,
+              message: 'Scan completed.',
+            });
+            break;
           default:
             failureCallback({
               cancelled: false,
