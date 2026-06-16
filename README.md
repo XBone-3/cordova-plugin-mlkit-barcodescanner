@@ -120,8 +120,11 @@ const defaultOptions = {
   rotateCamera: false,
   continuous: false,
   multiple: false,
-  drawDetectionBorder: false,
+  drawDetectionBorder: true,
   confirmation: false,
+  autoZoom: true,
+  showZoomSlider: true,
+  galleryButton: true,
 };
 ```
 
@@ -142,9 +145,9 @@ combined with `continuous`. Default: `false`.
 
 #### `drawDetectionBorder`
 
-When `true`, a border is drawn around each barcode in the camera preview as it
-is detected, tracing the code's corner points (so it follows rotated and 2D
-codes). Default: `false`. (Android only.)
+When `true`, **corner brackets** are drawn around each barcode in the camera
+preview as it is detected, following the code's corner points (so they follow
+rotated and 2D codes). Default: `true`. (Android only.)
 
 #### `confirmation`
 
@@ -153,6 +156,47 @@ freezes on the detected frame with the decoded value and **Confirm** / **Retry**
 buttons; the result is returned only when the user taps Confirm. Combine with
 `multiple` to confirm a whole frame of codes at once. Ignored in `continuous`
 mode. Default: `false`. (Android only.)
+
+#### `autoZoom`
+
+When `true`, the camera gradually zooms in whenever nothing has decoded for a
+short moment, then stops as soon as a code reads (or the user adjusts zoom
+manually). This pulls in small or distant barcodes without the user having to
+move the device closer, improving reliability at a distance. Default: `true`.
+(Android only.) See [Reliability notes & limitations](#reliability-notes--limitations).
+
+#### `showZoomSlider`
+
+When `true`, a zoom slider is shown in the camera UI so the user can zoom in and
+out manually. Pinch-to-zoom also works regardless of this option. Manually
+adjusting zoom disables `autoZoom` for that session. Default: `true`. (Android
+only.)
+
+#### `galleryButton`
+
+When `true`, a button in the bottom control bar lets the user pick an image from
+the device gallery and scan it. The picked image is shown full-screen with
+**corner brackets drawn over each detected code** (just like the live camera) and
+a **Confirm / Retry** prompt; the result is returned only on Confirm, while Retry
+goes back to the live camera. (This image review is always used for gallery
+scans, independent of the `confirmation` option.)
+
+If the whole image decodes nothing, the plugin automatically retries on
+overlapping tiles of the image at full resolution — this can pick up small or
+distant codes (e.g. a QR shot from far away) that a single whole-image pass
+misses. If still nothing is found, a brief message is shown and the live camera
+resumes. Default: `true`. (Android only.)
+
+#### Continuous mode **Done** button
+
+In `continuous` mode the camera UI shows a **Done** button so the user can end
+the session explicitly (previously only the back button closed it). Tapping Done
+invokes the error/close callback with
+`{ cancelled: true, message: 'Scan completed.' }` — it is treated as a graceful
+close, **not** an error, just like a back-press. The distinct message lets you
+tell a deliberate Done apart from a back-press
+(`{ cancelled: true, message: 'The scan was cancelled.' }`) if you need to.
+(Android only.)
 
 ### Output/Return value
 
@@ -175,6 +219,39 @@ result: Array<{
   type: string;
 }>;
 ```
+
+## Reliability notes & limitations
+
+The plugin runs **fully offline** — Google ML Kit's barcode model is bundled and
+executes on-device, so no network is used and no scan data leaves the device.
+
+A few things are worth knowing when tuning for reliability and CPU:
+
+- **Scan distance / "auto-zoom when a code is found but unreadable."** ML Kit's
+  barcode API only returns barcodes it has **fully decoded** — it does not expose
+  a "there is a barcode here but I couldn't read it" signal. Because of that, a
+  literal "detect-then-zoom" is not possible. The `autoZoom` option implements
+  the practical equivalent: when nothing decodes for ~1s it steps the zoom in
+  (up to a safe cap) until a code reads, then stops. This noticeably improves
+  reads of small or distant codes that previously only worked up close.
+- **Focus / small codes.** Keep `detectorSize` reasonably large (the default
+  `0.6`, or `1` for the whole screen). A very small focus box throws away
+  resolution and makes distant codes harder to read.
+- **CPU usage.** Scanning is throttled to the latest camera frame
+  (`STRATEGY_KEEP_ONLY_LATEST`), so it processes one frame at a time rather than
+  queuing, which keeps CPU bounded. A further optimisation (feeding ML Kit the
+  camera frame directly instead of converting each frame to a bitmap) is noted
+  as a follow-up below.
+- **Platform parity (important).** The new reliability/UI features —
+  corner-bracket borders, `autoZoom`, `showZoomSlider`, `galleryButton` and the
+  continuous **Done** button — are **Android only** for now. On iOS the scanner
+  keeps its existing behaviour. (This matches the existing `drawDetectionBorder`
+  and `confirmation` options, which were already Android-only.)
+- **Known follow-up (not yet done).** The Android analyzer still converts each
+  frame to a JPEG/bitmap before handing it to ML Kit. Switching to
+  `InputImage.fromMediaImage(...)` (the camera's YUV frame, full resolution)
+  would lower CPU and improve distance reads further; it is intentionally left
+  as a separate change.
 
 ## Known Issues
 
