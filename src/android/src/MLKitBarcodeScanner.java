@@ -131,8 +131,11 @@ public class MLKitBarcodeScanner extends CordovaPlugin {
     intent.putExtra("RotateCamera", config.optBoolean("rotateCamera", false));
     intent.putExtra("Continuous", config.optBoolean("continuous", false));
     intent.putExtra("Multiple", config.optBoolean("multiple", false));
-    intent.putExtra("DrawDetectionBorder", config.optBoolean("drawDetectionBorder", false));
+    intent.putExtra("DrawDetectionBorder", config.optBoolean("drawDetectionBorder", true));
     intent.putExtra("Confirmation", config.optBoolean("confirmation", false));
+    intent.putExtra("AutoZoom", config.optBoolean("autoZoom", true));
+    intent.putExtra("ShowZoomSlider", config.optBoolean("showZoomSlider", true));
+    intent.putExtra("GalleryButton", config.optBoolean("galleryButton", true));
 
     _BeepOnSuccess = config.optBoolean("beepOnSuccess", false);
     _VibrateOnSuccess = config.optBoolean("vibrateOnSuccess", false);
@@ -156,7 +159,17 @@ public class MLKitBarcodeScanner extends CordovaPlugin {
       // CommonStatusCodes.SUCCESS and Activity.RESULT_CANCELED are both 0, so a
       // successful scan can only be distinguished from a cancellation (back
       // press / permission denied) by the presence of result data.
-      if (resultCode == CommonStatusCodes.SUCCESS && data != null) {
+      if (resultCode == CommonStatusCodes.SUCCESS && data != null
+          && data.getBooleanExtra("completed", false)) {
+        // The user tapped "Done" to end a continuous session. Results were
+        // already streamed live; report a graceful completion (cancelled:false
+        // in JS) so the app can distinguish it from a back-press cancel.
+        JSONArray result = new JSONArray();
+        result.put("COMPLETED");
+        result.put("");
+        result.put("");
+        _CallbackContext.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, result));
+      } else if (resultCode == CommonStatusCodes.SUCCESS && data != null) {
         String payload = data.getStringExtra(CaptureActivity.BarcodePayload);
         try {
           // The payload is an array of [text, format, type] triples (one per
