@@ -17,4 +17,8 @@
     <string name="scan_confirm">Confirm</string>
     <string name="scan_retry">Retry</string>
     <string name="scan_confirm_count">%1$d barcodes detected</string>
+    <string name="scan_done">Done</string>
+    <string name="scan_gallery">Scan from gallery</string>
+    <string name="scan_instructions">Point the camera at a barcode</string>
+    <string name="scan_no_barcode_found">No barcode found in the image</string>
 </resources>

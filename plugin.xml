@@ -113,6 +113,12 @@
       target="res/drawable/torch_active.xml" />
     <resource-file src="src/android/res/drawable/torch_inactive.xml"
       target="res/drawable/torch_inactive.xml" />
+    <resource-file src="src/android/res/drawable/ic_gallery.xml"
+      target="res/drawable/ic_gallery.xml" />
+    <resource-file src="src/android/res/drawable/control_button_bg.xml"
+      target="res/drawable/control_button_bg.xml" />
+    <resource-file src="src/android/res/drawable/confirm_panel_bg.xml"
+      target="res/drawable/confirm_panel_bg.xml" />
 
     <framework src="com.android.support:support-v4:27.1.0" />
     <framework src="com.android.support:design:27.1.0" />
