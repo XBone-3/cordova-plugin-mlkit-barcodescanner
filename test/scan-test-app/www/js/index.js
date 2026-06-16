@@ -56,14 +56,20 @@ function onError(error) {
 }
 
 function scan() {
-  const formData = new FormData(document.querySelector('form'));
+  const form = document.querySelector('form');
   const options = {};
 
-  for (const pair of formData.entries()) {
-    const key = pair[0];
-    const value = pair[1];
-    // detectorSize is a number (scan-area fraction); the rest are boolean switches.
-    options[key] = key === 'detectorSize' ? parseFloat(value) : value === 'true';
+  // Read every switch by its checked state so on-by-default options can be
+  // turned *off* (an unchecked checkbox is simply absent from FormData, which
+  // would otherwise fall back to the default instead of sending false).
+  form.querySelectorAll('input[type="checkbox"][name]').forEach((input) => {
+    options[input.name] = input.checked;
+  });
+
+  // detectorSize is a number (scan-area fraction).
+  const detectorSize = form.querySelector('input[name="detectorSize"]');
+  if (detectorSize) {
+    options.detectorSize = parseFloat(detectorSize.value);
   }
 
   scanCount += 1;
